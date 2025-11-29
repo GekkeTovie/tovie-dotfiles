@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
 # TovieIT · Mystic Dotfile Uploader
-# Pushes ~/dotfiles to your GitHub repo in one incantation.
+# Pushes ~/dotfiles (including .config/<apps>) to your GitHub repo.
 
 set -euo pipefail
 
 DOTFILES_DIR="$HOME/dotfiles"
-
-# ---------- Colors ----------
-if [[ -t 1 ]]; then
-  C_RESET="\e[0m"
-  C_DIM="\e[2m"
-  C_BOLD="\e[1m"
-  C_MAGENTA="\e[38;5;135m"
-  C_CYAN="\e[38;5;44m"
-  C_GREEN="\e[38;5;77m"
-  C_YELLOW="\e[38;5;221m"
-  C_RED="\e[38;5;203m"
-else
-  C_RESET=""; C_DIM=""; C_BOLD=""
-  C_MAGENTA=""; C_CYAN=""; C_GREEN=""
-  C_YELLOW=""; C_RED=""
-fi
-
-m_info()  { printf "${C_CYAN}[🔮]${C_RESET} %s\n" "$*"; }
-m_ok()    { printf "${C_GREEN}[✨]${C_RESET} %s\n" "$*"; }
-m_warn()  { printf "${C_YELLOW}[⚠]${C_RESET} %s\n" "$*"*_; }
-#!/usr/bin/env bash
-# TovieIT · Mystic Dotfile Uploader
-# Pushes ~/dotfiles to your GitHub repo in one incantation.
-
-set -euo pipefail
-
-DOTFILES_DIR="$HOME/dotfiles"
+VAULT_CONFIG="$DOTFILES_DIR/.config"
 
 # ---------- Colors ----------
 if [[ -t 1 ]]; then
@@ -72,6 +46,26 @@ if [[ ! -d "$DOTFILES_DIR" ]]; then
   exit 1
 fi
 
+m_info "Dotfiles vault   : ${C_BOLD}$DOTFILES_DIR${C_RESET}"
+m_info "Config vault     : ${C_BOLD}$VAULT_CONFIG${C_RESET}"
+echo
+
+# Show which configs are currently tracked in the vault
+if [[ -d "$VAULT_CONFIG" ]]; then
+  mapfile -t cfg_dirs < <(find "$VAULT_CONFIG" -maxdepth 1 -mindepth 1 -type d -printf "%f\n" | sort)
+  if ((${#cfg_dirs[@]} > 0)); then
+    printf "${C_BOLD}${C_MAGENTA}Configs in .config vault:${C_RESET}\n\n"
+    for d in "${cfg_dirs[@]}"; do
+      printf "  ${C_CYAN}%s${C_RESET}  ${C_DIM}(~/.config/%s -> ~/dotfiles/.config/%s)${C_RESET}\n" "$d" "$d" "$d"
+    done
+    echo
+  else
+    m_warn "No folders found in $VAULT_CONFIG yet."
+  fi
+else
+  m_warn "Config vault directory $VAULT_CONFIG does not exist (yet)."
+fi
+
 cd "$DOTFILES_DIR"
 
 # ---------- Init repo if needed ----------
@@ -85,7 +79,6 @@ if [[ ! -d .git ]]; then
   fi
 fi
 
-# Determine current branch
 branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")"
 m_info "Working on branch: ${C_BOLD}$branch${C_RESET}"
 
@@ -135,14 +128,12 @@ fi
 echo
 m_info "Pushing to the cloud realm…"
 
-# Check if upstream exists
 if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
   git push
 else
   git push -u origin "$branch"
 fi
 
-m_ok "Dotfiles successfully pushed to GitHub."
+m_ok "Dotfiles (including .config symlinked configs) successfully pushed to GitHub."
 echo
-printf "${C_DIM}Share your repo so others can 'git clone' and weave your Omarchy setup.${C_RESET}\n"
-
+printf "${C_DIM}Anyone can now clone your repo and use the Weaver to link ~/.config -> ~/dotfiles/.config/<name>.${C_RESET}\n"
