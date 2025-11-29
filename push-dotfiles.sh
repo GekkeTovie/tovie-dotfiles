@@ -23,10 +23,10 @@ else
   C_YELLOW=""; C_RED=""
 fi
 
-m_info()  { printf "${C_CYAN}[🔮]${C_RESET} %s\n" "$*"; }
-m_ok()    { printf "${C_GREEN}[✨]${C_RESET} %s\n" "$*"; }
-m_warn()  { printf "${C_YELLOW}[⚠]${C_RESET} %s\n" "$*"; }
-m_err()   { printf "${C_RED}[✖]${C_RESET} %s\n" "$*"; }
+m_info()  { printf "${C_CYAN}[🔮]${C_RESET} %b\n" "$*"; }
+m_ok()    { printf "${C_GREEN}[✨]${C_RESET} %b\n" "$*"; }
+m_warn()  { printf "${C_YELLOW}[⚠]${C_RESET} %b\n" "$*"; }
+m_err()   { printf "${C_RED}[✖]${C_RESET} %b\n" "$*"; }
 
 # ---------- Banner ----------
 clear || true
@@ -42,7 +42,7 @@ printf "${C_RESET}\n"
 # ---------- Checks ----------
 if [[ ! -d "$DOTFILES_DIR" ]]; then
   m_err "No dotfiles vault at $DOTFILES_DIR"
-  m_info "Run the Mystic Dotfile Weaver first to create and fill it."
+  m_info "Run dotfiles-setup.sh first to create and fill it."
   exit 1
 fi
 
@@ -50,7 +50,7 @@ m_info "Dotfiles vault   : ${C_BOLD}$DOTFILES_DIR${C_RESET}"
 m_info "Config vault     : ${C_BOLD}$VAULT_CONFIG${C_RESET}"
 echo
 
-# Show which configs are currently tracked in the vault
+# Show which configs are tracked in the vault
 if [[ -d "$VAULT_CONFIG" ]]; then
   mapfile -t cfg_dirs < <(find "$VAULT_CONFIG" -maxdepth 1 -mindepth 1 -type d -printf "%f\n" | sort)
   if ((${#cfg_dirs[@]} > 0)); then
@@ -134,6 +134,6 @@ else
   git push -u origin "$branch"
 fi
 
-m_ok "Dotfiles (including .config symlinked configs) successfully pushed to GitHub."
+m_ok "Dotfiles (including .config/<apps>) successfully pushed to GitHub."
 echo
-printf "${C_DIM}Anyone can now clone your repo and use the Weaver to link ~/.config -> ~/dotfiles/.config/<name>.${C_RESET}\n"
+printf "${C_DIM}Anyone can now clone your repo and run dotfiles-setup.sh to link ~/.config/<name> -> ~/dotfiles/.config/<name>.${C_RESET}\n"

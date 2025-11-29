@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# TovieIT · Mystic Dotfile Weaver (clean layout)
-# Moves selected ~/.config folders into ~/dotfiles/.config
-# and symlinks them back, ready for GitHub.
+# TovieIT · Mystic Dotfile Weaver
+# Moves selected ~/.config folders into ~/dotfiles/.config/<name>
+# and symlinks them back. Also migrates old <name>/.config/<name> layouts.
 
 set -euo pipefail
 
@@ -25,10 +25,10 @@ else
   C_YELLOW=""; C_RED=""
 fi
 
-m_info()  { printf "${C_CYAN}[🔮]${C_RESET} %s\n" "$*"; }
-m_ok()    { printf "${C_GREEN}[✨]${C_RESET} %s\n" "$*"; }
-m_warn()  { printf "${C_YELLOW}[⚠]${C_RESET} %s\n" "$*"; }
-m_err()   { printf "${C_RED}[✖]${C_RESET} %s\n" "$*"; }
+m_info()  { printf "${C_CYAN}[🔮]${C_RESET} %b\n" "$*"; }
+m_ok()    { printf "${C_GREEN}[✨]${C_RESET} %b\n" "$*"; }
+m_warn()  { printf "${C_YELLOW}[⚠]${C_RESET} %b\n" "$*"; }
+m_err()   { printf "${C_RED}[✖]${C_RESET} %b\n" "$*"; }
 
 # ---------- Banner ----------
 clear || true
@@ -41,7 +41,7 @@ cat << 'EOF'
 EOF
 printf "${C_RESET}\n"
 
-# Ensure dotfiles vault + .config exist
+# ---------- Ensure dotfiles vault exists ----------
 if [[ ! -d "$DOTFILES_DIR" ]]; then
   m_info "No dotfiles vault detected, conjuring one at ~/dotfiles…"
   mkdir -p "$DOTFILES_DIR"
@@ -54,23 +54,47 @@ m_info "Config source     : ${C_BOLD}$CONFIG_DIR${C_RESET}"
 m_info "Dotfiles .config  : ${C_BOLD}$VAULT_CONFIG${C_RESET}"
 echo
 
-# ---------- Gather names from ~/.config and ~/dotfiles/.config ----------
+# ---------- Legacy migration helper ----------
+migrate_legacy_layout() {
+  local name="$1"
+  local vault_dir="$VAULT_CONFIG/$name"
+  local nested="$vault_dir/.config/$name"
+
+  # Old layout: ~/dotfiles/.config/<name>/.config/<name>
+  if [[ -d "$nested" ]]; then
+    m_warn "Found legacy layout for '$name' at $nested – migrating to flat layout…"
+    mkdir -p "$vault_dir"
+
+    shopt -s dotglob
+    mv "$nested"/* "$vault_dir"/
+    shopt -u dotglob
+
+    rmdir "$nested" 2>/dev/null || true
+    rmdir "$vault_dir/.config" 2>/dev/null || true
+
+    m_ok "Migrated '$name' to flat layout: $vault_dir"
+  fi
+}
+
+# ---------- Gather config names ----------
 m_info "Scanning your arcane config tomes…"
 
 declare -A seen
 
 # From ~/.config
 if [[ -d "$CONFIG_DIR" ]]; then
-  while IFS= read -r d; do
-    name="${d##*/}"
+  while IFS= read -r path; do
+    name="${path##*/}"
+    [[ "$name" == .* ]] && continue   # skip dot dirs like .git
     seen["$name"]=1
   done < <(find "$CONFIG_DIR" -maxdepth 1 -mindepth 1 -type d)
 fi
 
 # From ~/dotfiles/.config
 if [[ -d "$VAULT_CONFIG" ]]; then
-  while IFS= read -r d; do
-    name="${d##*/}"
+  while IFS= read -r path; do
+    name="${path##*/}"
+    [[ "$name" == .* ]] && continue
     seen["$name"]=1
   done < <(find "$VAULT_CONFIG" -maxdepth 1 -mindepth 1 -type d)
 fi
@@ -82,7 +106,7 @@ fi
 
 dirs=()
 for k in "${!seen[@]}"; do dirs+=("$k"); done
-IFS=$'\n' dirs=($(sort <<<"${dirs[*]}")); unset IFS
+IFS=$'\n' dirs=($(printf '%s\n' "${dirs[@]}" | sort)); unset IFS
 
 echo
 printf "${C_BOLD}${C_MAGENTA}Available grimoires:${C_RESET}\n\n"
@@ -92,8 +116,8 @@ for d in "${dirs[@]}"; do
   src_flag=""
   dot_flag=""
 
-  [[ -d "$CONFIG_DIR/$d" ]]       && src_flag="·cfg"
-  [[ -d "$VAULT_CONFIG/$d" ]]     && dot_flag="·dot"
+  [[ -d "$CONFIG_DIR/$d" ]]   && src_flag="·cfg"
+  [[ -d "$VAULT_CONFIG/$d" ]] && dot_flag="·dot"
 
   printf "  ${C_MAGENTA}%2d${C_RESET}) ${C_CYAN}%-18s${C_RESET} ${C_DIM}%s%s${C_RESET}\n" \
     "$i" "$d" "$src_flag" "$dot_flag"
@@ -128,6 +152,7 @@ read -rp "$(printf "${C_YELLOW}Proceed (y/N)?${C_RESET} ")" confirm
 summary_moved=()
 summary_linked=()
 
+# ---------- Main loop ----------
 for name in "${selected_dirs[@]}"; do
   echo
   printf "${C_BOLD}${C_MAGENTA}◆ Weaving:${C_RESET} ${C_CYAN}%s${C_RESET}\n" "$name"
@@ -135,31 +160,39 @@ for name in "${selected_dirs[@]}"; do
   src="$CONFIG_DIR/$name"
   vault="$VAULT_CONFIG/$name"
 
-  # If config exists in ~/.config and not yet in vault: move it
-  if [[ -d "$src" && ! -d "$vault" ]]; then
+  migrate_legacy_layout "$name"
+
+  if [[ -d "$src" && ! -L "$src" && ! -d "$vault" ]]; then
     m_info "Moving ${C_CYAN}$src${C_RESET} -> ${C_CYAN}$vault${C_RESET}"
     mkdir -p "$VAULT_CONFIG"
     mv "$src" "$vault"
     m_ok "Config for '$name' bound into dotfiles vault."
     summary_moved+=("$name")
-  elif [[ -d "$src" && -d "$vault" ]]; then
-    m_warn "'$name' exists in both ~/.config and dotfiles. Leaving vault copy; replacing ~/.config with a link."
+
+  elif [[ -d "$src" && ! -L "$src" && -d "$vault" ]]; then
+    m_warn "'$name' exists in both ~/.config and vault. Keeping vault copy and replacing ~/.config with a symlink."
     rm -rf "$src"
+
   elif [[ ! -d "$src" && -d "$vault" ]]; then
     m_info "No live ~/.config/$name, but vault contains it – will just link it."
+
+  elif [[ -L "$src" ]]; then
+    m_info "~/.config/$name is already a symlink. Recreating it to be sure."
+    rm -f "$src"
+
   else
     m_warn "Skipping '$name' – no config in ~/.config or vault."
     continue
   fi
 
-  # (Re)create symlink in ~/.config
-  if [[ -e "$src" || -L "$src" ]]; then
-    rm -rf "$src"
+  if [[ -d "$vault" ]]; then
+    [[ -e "$src" || -L "$src" ]] && rm -rf "$src"
+    ln -s "$vault" "$src"
+    m_ok "Symlink created: ${C_CYAN}$src -> $vault${C_RESET}"
+    summary_linked+=("$name")
+  else
+    m_warn "Vault path $vault does not exist for '$name'; nothing to link."
   fi
-
-  ln -s "$vault" "$src"
-  m_ok "Symlink created: ${C_CYAN}$src -> $vault${C_RESET}"
-  summary_linked+=("$name")
 done
 
 echo
@@ -176,4 +209,4 @@ if ((${#summary_linked[@]} > 0)); then
 fi
 
 echo
-printf "${C_DIM}On GitHub you'll now see: .config/<name> instead of <name>/.config/<name>.${C_RESET}\n"
+printf "${C_DIM}Layout is now flat: ~/dotfiles/.config/<name>/… and ~/.config/<name> -> that folder.${C_RESET}\n"
